@@ -239,7 +239,7 @@ def main():
         if v is None: continue
         d = os.path.join(HERE, "s", vid); os.makedirs(d, exist_ok=True)
         tp = os.path.join(d, "thumb.jpg")
-        if not a.no_fetch and (a.force_thumbs or not os.path.exists(tp)):
+        if not a.no_fetch and not v.get("custom_thumb") and (a.force_thumbs or not os.path.exists(tp)):  # custom_thumb in shorts.json = manual override, never refetched
             src, size = make_thumb(vid, tp)
             v["thumb_src"], v["thumb_bytes"] = src, size
             # content-hashed copy so WhatsApp/CDN caches see a new URL when the image changes
