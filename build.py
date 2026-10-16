@@ -12,6 +12,7 @@ Output (next to this script):
   index.html, shorts.json, s/<videoId>/index.html, s/<videoId>/thumb.jpg
 Needs: Python 3.8+, Pillow (pip install pillow). Uses only public YouTube endpoints, no login.
 """
+import hashlib
 import argparse, html, io, json, os, re, sys, time, urllib.parse, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -158,7 +159,7 @@ h1{{font-size:1.1rem;line-height:1.4}}
 </head>
 <body>
 <main>
-<a href="{yt}"><img src="thumb.jpg" alt="{title}" width="1280" height="720"></a>
+<a href="{yt}"><img src="{thumb}" alt="{title}" width="1280" height="720"></a>
 <h1>{title}</h1>
 <a class="btn" href="{yt}">&#9654; Watch on YouTube</a>
 <p><small>Redirecting&hellip; If nothing happens, tap the button.</small></p>
@@ -241,11 +242,20 @@ def main():
         if not a.no_fetch and (a.force_thumbs or not os.path.exists(tp)):
             src, size = make_thumb(vid, tp)
             v["thumb_src"], v["thumb_bytes"] = src, size
+            # content-hashed copy so WhatsApp/CDN caches see a new URL when the image changes
+            data = open(tp, "rb").read()
+            hf = f"thumb-{hashlib.sha1(data).hexdigest()[:8]}.jpg"
+            for old in os.listdir(d):
+                if old.startswith("thumb-") and old.endswith(".jpg") and old != hf:
+                    os.remove(os.path.join(d, old))
+            open(os.path.join(d, hf), "wb").write(data)
+            v["thumb_file"] = hf
+        tf = v.get("thumb_file") if v.get("thumb_file") and os.path.exists(os.path.join(d, v["thumb_file"])) else "thumb.jpg"
         yt = f"https://www.youtube.com/shorts/{vid}"
         desc = f"Watch on YouTube · {v['author']}"
         with open(os.path.join(d, "index.html"), "w", encoding="utf-8") as f:
             f.write(PAGE.format(title=esc(v["title"]), desc=esc(desc), author=esc(v["author"]), yt=esc(yt),
-                                yt_js=json.dumps(yt), page=esc(f"{base}/s/{vid}/"), img=esc(f"{base}/s/{vid}/thumb.jpg")))
+                                yt_js=json.dumps(yt), page=esc(f"{base}/s/{vid}/"), img=esc(f"{base}/s/{vid}/{tf}"), thumb=esc(tf)))
     manifest["order"] = [i for i in order if i in manifest["videos"]]
     json.dump(manifest, open(man_path, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 
@@ -253,9 +263,9 @@ def main():
     author = manifest["videos"][vids[0]]["author"] if vids else a.channel
     author_url = manifest["videos"][vids[0]]["author_url"] if vids else ""
     cards = "\n".join(
-        f'<a class="card" href="s/{i}/"><img loading="lazy" src="s/{i}/thumb.jpg" alt=""><p>{esc(manifest["videos"][i]["title"])}</p></a>'
+        f'<a class="card" href="s/{i}/"><img loading="lazy" src="s/{i}/{manifest['videos'][i].get('thumb_file') or 'thumb.jpg'}" alt=""><p>{esc(manifest["videos"][i]["title"])}</p></a>'
         for i in vids)
-    og_img = (f'<meta property="og:image" content="{esc(base)}/s/{vids[0]}/thumb.jpg">\n'
+    og_img = (f'<meta property="og:image" content="{esc(base)}/s/{vids[0]}/{manifest['videos'][vids[0]].get('thumb_file') or 'thumb.jpg'}">\n'
               f'<meta property="og:image:width" content="1280">\n<meta property="og:image:height" content="720">') if vids else ""
     with open(os.path.join(HERE, "index.html"), "w", encoding="utf-8") as f:
         f.write(INDEX.format(author=esc(author), author_url=esc(author_url), n=len(vids), base=esc(base),
